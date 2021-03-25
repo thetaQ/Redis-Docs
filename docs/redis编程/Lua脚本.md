@@ -24,7 +24,7 @@
 4) "second"
 ```
 
-注意：正如你所见，Lua数组是以Redis多条批量恢复的形式返回，这种返回类型在你的客户端库会转换成你用的编程语言中的数组形式。
+注意：正如你所见，Lua数组是以Redis多块响应(multi bulk replies)的形式返回，这种返回类型在你的客户端库会转换成你用的编程语言中的数组形式。
 
 Lua脚本可以使用两个不同的Lua函数去调用Redis命令：
 
@@ -55,7 +55,30 @@ OK
 
 ### Lua和Redis之间数据类型转换
 
+当Lua脚本使用`call()`或者`pcall()`调用Redis命令时，Redis的返回值将会被转换成Lua数据类型。类似的，当调用Redis命令并且Lua脚本返回值时，Lua数据类型将会转换成Redis协议，以便脚本可以控制[EVAL](https://redis.io/commands/eval)命令返回给客户端的值。
 
+这种数据类型之间的转换被设计成这种形式：如果Redis类型转换成Lua数据类型，然后结果又被转换为Redis类型，那么结果将会和初始值相同。
 
+换句话说，Lua和Redis类型的转换是一对一的。下表展示了所有的转换规则：
 
+**Redis到Lua**的转换表：
 
+- Redis 整型响应 -> Lua数字
+- Redis 块响应(bulk reply) -> Lua字符串
+- Redis 多块响应(multi bulk reply ) -> Lua table (可能嵌套了其他Redis数据类型)
+- Redis 状态响应 -> Lua表格，包含`ok`字段
+- Redis 错误响应 -> Lua表格，包含`err`字段
+- Redis Nil块响应或Nil多块响应 -> Lua布尔类型false
+
+**Lua到Redis**的转换表：
+
+- Lua数字 -> Redis 整型响应 (the number is converted into an integer)
+- Lua字符串-> Redis 块响应(bulk reply)
+- Lua表（数组） -> Redis 多块响应(multi bulk reply )  (截止至Lua数组的第一个nil)
+- 仅包含`ok`字段的Lua表格 -> Redis 状态响应
+- 仅包含`err`字段的Lua表格 -> Redis 错误响应
+- Lua布尔类型false -> Redis Nil块响应
+
+还有一个额外的Lua到Redis的转换，但是没有对应的Redis到Lua转换的规则：
+
+- Lua布尔类型true -> Redis整型响应，值为1
